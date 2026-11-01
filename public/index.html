@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>番茄小说下载器</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon">番</span><span>番茄小说下载器<small>发现 · 阅读 · 收藏</small></span></div>
+    <form id="searchForm" class="search"><input id="searchInput" type="search" placeholder="搜索书名或作者" aria-label="搜索书名或作者" maxlength="80"><button type="submit">搜索</button></form>
+  </header>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="side-heading">探索分类</div>
+      <button id="allBooks" class="side-item active" type="button">全部书籍</button>
+      <div id="categories"></div>
+      <div class="side-foot">仅供个人阅读使用，请尊重作品版权。</div>
+    </aside>
+    <main>
+      <section id="listingView">
+        <div class="hero"><div><span class="eyebrow">你的私人书架入口</span><h1 id="listTitle">发现下一本好书</h1><p id="listSubtitle">浏览分类、搜索故事，随时开始阅读。</p></div><div class="hero-art">✦<span>📖</span>✦</div></div>
+        <div class="section-title"><h2 id="sectionHeading">精选书籍</h2><span id="listCount"></span></div>
+        <div id="bookGrid" class="book-grid"></div>
+        <div id="listMessage" class="message" hidden></div>
+        <div class="pagination"><button id="prevPage" type="button">上一页</button><span id="pageLabel">第 1 页</span><button id="nextPage" type="button">下一页</button></div>
+      </section>
+      <section id="detailView" hidden>
+        <button id="backButton" class="text-button" type="button">← 返回书籍列表</button>
+        <div id="detailContent"></div>
+      </section>
+    </main>
+  </div>
+  <div id="readerOverlay" class="overlay" hidden>
+    <div class="reader" role="dialog" aria-modal="true" aria-label="阅读章节">
+      <div class="reader-toolbar"><button id="closeReader" class="text-button" type="button">← 返回目录</button><span id="readerPosition"></span><div><button id="prevChapter" type="button">上一章</button><button id="nextChapter" type="button">下一章</button></div></div>
+      <div id="readerBody" class="reader-body"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

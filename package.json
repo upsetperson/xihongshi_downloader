@@ -1,0 +1,12 @@
+{
+  "name": "xihongshi-downloader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "番茄小说分类浏览、搜索、阅读与 TXT 下载",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "cheerio": "^1.1.2" }
+}

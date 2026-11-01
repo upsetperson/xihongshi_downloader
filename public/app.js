@@ -1,0 +1,165 @@
+const $ = selector => document.querySelector(selector);
+const state = { category: '-1', categoryName: '全部书籍', query: '', page: 1, books: [], detail: null, chapterIndex: 0, listToken: 0, downloading: false };
+const elements = { grid: $('#bookGrid'), message: $('#listMessage'), detail: $('#detailContent'), reader: $('#readerBody') };
+
+function el(tag, className = '', text = '') {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = text;
+  return node;
+}
+function toast(message) {
+  const node = $('#toast'); node.textContent = message; node.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => node.hidden = true, 4500);
+}
+async function api(path) {
+  const response = await fetch(path);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || '请求失败');
+  return data;
+}
+function cover(src, className = 'cover') {
+  const image = el('img', className); image.alt = '书籍封面'; image.loading = 'lazy';
+  if (src && /^https?:\/\//.test(src)) image.src = src;
+  image.onerror = () => { image.removeAttribute('src'); image.alt = '暂无封面'; };
+  return image;
+}
+function updateNav() {
+  document.querySelectorAll('.side-item').forEach(node => node.classList.toggle('active', !state.query && node.dataset.category === state.category));
+}
+async function loadCategories() {
+  try {
+    const groups = await api('/api/categories');
+    const box = $('#categories'); box.replaceChildren();
+    for (const group of groups) {
+      box.append(el('div', 'group-title', group.name));
+      for (const item of group.items) {
+        const button = el('button', 'side-item', item.name);
+        button.type = 'button'; button.dataset.category = item.id;
+        button.addEventListener('click', () => chooseCategory(item.id, item.name));
+        box.append(button);
+      }
+    }
+  } catch (error) { toast(`分类加载失败：${error.message}`); }
+}
+function chooseCategory(id, name) {
+  state.category = id; state.categoryName = name; state.query = ''; state.page = 1;
+  $('#searchInput').value = ''; updateNav(); showListing(); loadBooks();
+}
+function showListing() { $('#detailView').hidden = true; $('#listingView').hidden = false; }
+function setMessage(message) { elements.message.textContent = message; elements.message.hidden = !message; }
+async function loadBooks() {
+  const token = ++state.listToken;
+  elements.grid.replaceChildren(); setMessage('正在加载书籍…');
+  $('#listTitle').textContent = state.query ? `搜索“${state.query}”` : state.category === '-1' ? '发现下一本好书' : state.categoryName;
+  $('#sectionHeading').textContent = state.query ? '搜索结果' : state.categoryName;
+  $('#listSubtitle').textContent = state.query ? '找到感兴趣的作品，点开即可查看目录。' : '浏览分类、搜索故事，随时开始阅读。';
+  $('#pageLabel').textContent = `第 ${state.page} 页`;
+  $('#prevPage').disabled = state.page === 1;
+  try {
+    const result = state.query
+      ? await api(`/api/search?q=${encodeURIComponent(state.query)}&page=${state.page}`)
+      : await api(`/api/books?category=${encodeURIComponent(state.category)}&page=${state.page}`);
+    if (token !== state.listToken) return;
+    const items = state.query ? result.items : result;
+    state.books = items; elements.grid.replaceChildren();
+    $('#listCount').textContent = `本页 ${items.length} 本`;
+    $('#nextPage').disabled = state.query ? !result.hasMore : items.length < 18;
+    setMessage(items.length ? '' : '这一页没有书籍，试试其他分类或关键词。');
+    for (const book of items) {
+      const button = el('button', 'book-card'); button.type = 'button';
+      button.append(cover(book.cover));
+      const info = el('div', 'book-info');
+      info.append(el('h3', '', book.title || '未知书名'), el('div', 'author', book.author || '未知作者'), el('p', 'summary', book.summary || '点击查看作品详情'));
+      button.append(info); button.addEventListener('click', () => openBook(book.id)); elements.grid.append(button);
+    }
+  } catch (error) { if (token === state.listToken) { setMessage(`加载失败：${error.message}`); $('#nextPage').disabled = true; } }
+}
+async function openBook(id) {
+  $('#detailView').hidden = false; $('#listingView').hidden = true;
+  elements.detail.replaceChildren(el('div', 'message', '正在加载作品详情…'));
+  try { state.detail = await api(`/api/books/${id}`); renderDetail(); }
+  catch (error) { elements.detail.replaceChildren(el('div', 'message', `加载失败：${error.message}`)); }
+}
+function renderDetail() {
+  const book = state.detail; elements.detail.replaceChildren();
+  const top = el('div', 'detail-top'); top.append(cover(book.cover, 'detail-cover'));
+  const info = el('div', 'detail-main'); info.append(el('h1', '', book.title));
+  info.append(el('div', 'detail-meta', `作者：${book.author || '未知'} · ${book.chapters.length} 章`));
+  if (book.latest) info.append(el('div', 'detail-meta', book.latest));
+  info.append(el('p', 'detail-summary', book.summary || '暂无简介'));
+  const actions = el('div', 'detail-actions');
+  const read = el('button', 'primary', '开始阅读'); read.type = 'button'; read.addEventListener('click', () => openChapter(0)); actions.append(read);
+  const range = el('div', 'download-range'); range.append(el('span', '', '下载范围'));
+  const start = el('input'); start.type = 'number'; start.min = '1'; start.max = String(book.chapters.length); start.value = '1'; start.setAttribute('aria-label', '起始章节');
+  const end = el('input'); end.type = 'number'; end.min = '1'; end.max = String(book.chapters.length); end.value = String(book.chapters.length); end.setAttribute('aria-label', '结束章节');
+  range.append(start, el('span', '', '至'), end); actions.append(range);
+  const download = el('button', 'secondary', '下载 TXT'); download.type = 'button'; actions.append(download);
+  const cancel = el('button', 'secondary', '取消下载'); cancel.type = 'button'; cancel.hidden = true; actions.append(cancel);
+  const status = el('div', 'download-status');
+  let controller;
+  cancel.addEventListener('click', () => controller?.abort());
+  download.addEventListener('click', async () => {
+    if (state.downloading) return;
+    const first = Number(start.value), last = Number(end.value);
+    if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last > book.chapters.length || first > last) return toast('请输入有效的章节范围');
+    state.downloading = true; controller = new AbortController(); download.disabled = true; cancel.hidden = false;
+    const parts = [`${book.title}\n作者：${book.author}\n\n`]; const failures = [];
+    for (let index = first - 1; index < last; index++) {
+      if (controller.signal.aborted) break;
+      status.textContent = `正在下载第 ${index + 1}/${last} 章：${book.chapters[index].title}`;
+      try {
+        const response = await fetch(`/api/chapters/${book.chapters[index].id}`, { signal: controller.signal });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || '下载失败');
+        parts.push(`${book.chapters[index].title}\n\n${result.content}\n\n`);
+      } catch (error) { if (controller.signal.aborted) break; failures.push(`${index + 1}. ${book.chapters[index].title}: ${error.message}`); }
+    }
+    if (controller.signal.aborted) { status.textContent = '下载已取消'; }
+    else if (parts.length === 1) { status.textContent = '所有章节均下载失败，请稍后重试'; }
+    else {
+      if (failures.length) parts.push(`\n下载失败的章节：\n${failures.join('\n')}\n`);
+      const blob = new Blob(parts, { type: 'text/plain;charset=utf-8' });
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+      link.download = `${book.title.replace(/[\\/:*?"<>|]/g, '_')}_${first}-${last}.txt`;
+      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+      status.textContent = `完成：${parts.length - 1 - Number(failures.length > 0)} 章成功${failures.length ? `，${failures.length} 章失败（已写入文件末尾）` : ''}`;
+    }
+    state.downloading = false; download.disabled = false; cancel.hidden = true;
+  });
+  info.append(actions, status); top.append(info); elements.detail.append(top);
+  const heading = el('div', 'chapter-heading'); heading.append(el('h2', '', '章节目录'), el('span', '', `共 ${book.chapters.length} 章`)); elements.detail.append(heading);
+  const list = el('div', 'chapter-list');
+  book.chapters.forEach((chapter, index) => {
+    const button = el('button', 'chapter-link', chapter.title || `第 ${index + 1} 章`);
+    button.type = 'button'; button.addEventListener('click', () => openChapter(index)); list.append(button);
+  });
+  elements.detail.append(list);
+}
+async function openChapter(index) {
+  if (!state.detail || index < 0 || index >= state.detail.chapters.length) return;
+  state.chapterIndex = index; $('#readerOverlay').hidden = false; document.body.style.overflow = 'hidden';
+  $('#readerPosition').textContent = `${index + 1} / ${state.detail.chapters.length}`;
+  $('#prevChapter').disabled = index === 0; $('#nextChapter').disabled = index === state.detail.chapters.length - 1;
+  elements.reader.replaceChildren(el('div', 'message', '正在加载章节…'));
+  try {
+    const chapter = await api(`/api/chapters/${state.detail.chapters[index].id}`);
+    if (index !== state.chapterIndex) return;
+    elements.reader.replaceChildren(el('h1', '', chapter.title || state.detail.chapters[index].title), el('div', '', chapter.content));
+    elements.reader.scrollTop = 0;
+  } catch (error) { elements.reader.replaceChildren(el('div', 'message', `章节加载失败：${error.message}`)); }
+}
+$('#allBooks').dataset.category = '-1';
+$('#allBooks').addEventListener('click', () => chooseCategory('-1', '全部书籍'));
+$('#searchForm').addEventListener('submit', event => {
+  event.preventDefault(); const query = $('#searchInput').value.trim(); if (!query) return toast('请输入书名或作者');
+  state.query = query; state.page = 1; updateNav(); showListing(); loadBooks();
+});
+$('#prevPage').addEventListener('click', () => { if (state.page > 1) { state.page--; loadBooks(); window.scrollTo(0, 0); } });
+$('#nextPage').addEventListener('click', () => { state.page++; loadBooks(); window.scrollTo(0, 0); });
+$('#backButton').addEventListener('click', showListing);
+$('#closeReader').addEventListener('click', () => { $('#readerOverlay').hidden = true; document.body.style.overflow = ''; });
+$('#prevChapter').addEventListener('click', () => openChapter(state.chapterIndex - 1));
+$('#nextChapter').addEventListener('click', () => openChapter(state.chapterIndex + 1));
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#readerOverlay').hidden) $('#closeReader').click(); });
+loadCategories(); loadBooks();
