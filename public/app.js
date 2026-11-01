@@ -2,6 +2,26 @@ const $ = selector => document.querySelector(selector);
 const state = { category: '1317', categoryName: '古言权谋', group: '主题', groups: [], gender: '0', status: '0', words: '1', sort: '0', query: '', page: 1, books: [], detail: null, chapterIndex: 0, listToken: 0, downloading: false };
 const elements = { grid: $('#bookGrid'), message: $('#listMessage'), detail: $('#detailContent'), reader: $('#readerBody') };
 const COOKIE_KEY = 'fanqie.cookies.v1';
+const READER_KEY = 'fanqie.reader.v1';
+const CHAPTER_PAGE_SIZE = 60;
+const DEFAULT_READER = { theme: 'paper', fontSize: 17, lineHeight: 2.1, width: 760 };
+let chapterPage = 1;
+function readerPreferences() {
+  try { return { ...DEFAULT_READER, ...JSON.parse(localStorage.getItem(READER_KEY) || '{}') }; }
+  catch { return { ...DEFAULT_READER }; }
+}
+function applyReaderPreferences() {
+  const prefs = readerPreferences();
+  const reader = $('.reader');
+  reader.dataset.theme = ['paper','warm','dark'].includes(prefs.theme) ? prefs.theme : 'paper';
+  reader.style.setProperty('--reader-font-size', `${Math.min(26, Math.max(14, Number(prefs.fontSize) || 17))}px`);
+  reader.style.setProperty('--reader-line-height', String(Math.min(2.6, Math.max(1.5, Number(prefs.lineHeight) || 2.1))));
+  reader.style.setProperty('--reader-width', `${Math.min(900, Math.max(520, Number(prefs.width) || 760))}px`);
+  for (const [id, value, suffix] of [['readerFontSize',prefs.fontSize,'px'],['readerLineHeight',prefs.lineHeight,''],['readerWidth',prefs.width,'px']]) {
+    $(`#${id}`).value = value; $(`#${id}Value`).textContent = `${value}${suffix}`;
+  }
+  $('#readerTheme').value = reader.dataset.theme;
+}
 let cookieCursor = 0;
 function configuredCookies() {
   try { const value = JSON.parse(localStorage.getItem(COOKIE_KEY) || '[]'); return Array.isArray(value) ? value.filter(item => typeof item === 'string' && item.trim()) : []; }
@@ -125,7 +145,7 @@ async function openBook(id) {
   catch (error) { elements.detail.replaceChildren(el('div', 'message', `加载失败：${error.message}`)); }
 }
 function renderDetail() {
-  const book = state.detail; elements.detail.replaceChildren();
+  const book = state.detail; elements.detail.replaceChildren(); chapterPage = 1;
   const top = el('div', 'detail-top'); top.append(cover(book.cover, 'detail-cover'));
   const info = el('div', 'detail-main'); info.append(el('h1', '', book.title));
   info.append(el('div', 'detail-meta', `作者：${book.author || '未知'} · ${book.chapters.length} 章`));
@@ -173,23 +193,45 @@ function renderDetail() {
   });
   info.append(actions, status); top.append(info); elements.detail.append(top);
   const heading = el('div', 'chapter-heading'); heading.append(el('h2', '', '章节目录'), el('span', '', `共 ${book.chapters.length} 章`)); elements.detail.append(heading);
-  const list = el('div', 'chapter-list');
-  book.chapters.forEach((chapter, index) => {
+  const list = el('div', 'chapter-list'); list.id = 'chapterList'; elements.detail.append(list);
+  const pager = el('div', 'chapter-pager'); pager.id = 'chapterPager'; elements.detail.append(pager);
+  renderChapterPage();
+}
+function renderChapterPage() {
+  const book = state.detail; if (!book) return;
+  const totalPages = Math.max(1, Math.ceil(book.chapters.length / CHAPTER_PAGE_SIZE));
+  chapterPage = Math.min(totalPages, Math.max(1, chapterPage));
+  const list = $('#chapterList'), pager = $('#chapterPager'); list.replaceChildren(); pager.replaceChildren();
+  const start = (chapterPage - 1) * CHAPTER_PAGE_SIZE;
+  book.chapters.slice(start, start + CHAPTER_PAGE_SIZE).forEach((chapter, offset) => {
+    const index = start + offset;
     const button = el('button', 'chapter-link', chapter.title || `第 ${index + 1} 章`);
     button.type = 'button'; button.addEventListener('click', () => openChapter(index)); list.append(button);
   });
-  elements.detail.append(list);
+  const previous = el('button', 'secondary', '上一页'); previous.disabled = chapterPage === 1;
+  previous.addEventListener('click', () => { chapterPage--; renderChapterPage(); $('#chapterList').scrollIntoView({block:'start'}); });
+  const next = el('button', 'secondary', '下一页'); next.disabled = chapterPage === totalPages;
+  next.addEventListener('click', () => { chapterPage++; renderChapterPage(); $('#chapterList').scrollIntoView({block:'start'}); });
+  const jump = el('select'); jump.setAttribute('aria-label', '跳转目录页');
+  for (let page = 1; page <= totalPages; page++) {
+    const first = (page - 1) * CHAPTER_PAGE_SIZE + 1, last = Math.min(page * CHAPTER_PAGE_SIZE, book.chapters.length);
+    const option = el('option', '', `${first}–${last} 章`); option.value = String(page); jump.append(option);
+  }
+  jump.value = String(chapterPage); jump.addEventListener('change', () => { chapterPage = Number(jump.value); renderChapterPage(); });
+  pager.append(previous, el('span', '', `第 ${chapterPage} / ${totalPages} 页`), jump, next);
 }
 async function openChapter(index) {
   if (!state.detail || index < 0 || index >= state.detail.chapters.length) return;
-  state.chapterIndex = index; $('#readerOverlay').hidden = false; document.body.style.overflow = 'hidden';
+  state.chapterIndex = index; $('#readerOverlay').hidden = false; document.body.style.overflow = 'hidden'; applyReaderPreferences();
   $('#readerPosition').textContent = `${index + 1} / ${state.detail.chapters.length}`;
   $('#prevChapter').disabled = index === 0; $('#nextChapter').disabled = index === state.detail.chapters.length - 1;
   elements.reader.replaceChildren(el('div', 'message', '正在加载章节…'));
   try {
     const chapter = await api(`/api/chapters/${state.detail.chapters[index].id}`, true);
     if (index !== state.chapterIndex) return;
-    elements.reader.replaceChildren(el('h1', '', chapter.title || state.detail.chapters[index].title), el('div', '', chapter.content));
+    const text = el('div', 'reader-text');
+    for (const paragraph of chapter.content.split(/\n\s*\n|\n/).filter(Boolean)) text.append(el('p', '', paragraph.trim()));
+    elements.reader.replaceChildren(el('div', 'reader-book-title', state.detail.title), el('h1', '', chapter.title || state.detail.chapters[index].title), text);
     elements.reader.scrollTop = 0;
   } catch (error) { elements.reader.replaceChildren(el('div', 'message', `章节加载失败：${error.message}`)); }
 }
@@ -202,9 +244,19 @@ $('#searchForm').addEventListener('submit', event => {
 $('#prevPage').addEventListener('click', () => { if (state.page > 1) { state.page--; loadBooks(); window.scrollTo(0, 0); } });
 $('#nextPage').addEventListener('click', () => { state.page++; loadBooks(); window.scrollTo(0, 0); });
 $('#backButton').addEventListener('click', showListing);
-$('#closeReader').addEventListener('click', () => { $('#readerOverlay').hidden = true; document.body.style.overflow = ''; });
+$('#closeReader').addEventListener('click', () => { $('#readerOverlay').hidden = true; document.body.style.overflow = ''; chapterPage = Math.floor(state.chapterIndex / CHAPTER_PAGE_SIZE) + 1; renderChapterPage(); });
 $('#prevChapter').addEventListener('click', () => openChapter(state.chapterIndex - 1));
 $('#nextChapter').addEventListener('click', () => openChapter(state.chapterIndex + 1));
+$('#readerSettingsButton').addEventListener('click', () => { const panel = $('#readerSettings'); panel.hidden = !panel.hidden; $('#readerSettingsButton').setAttribute('aria-expanded', String(!panel.hidden)); });
+for (const id of ['readerTheme','readerFontSize','readerLineHeight','readerWidth']) {
+  $(`#${id}`).addEventListener('input', () => {
+    const prefs = readerPreferences();
+    prefs.theme = $('#readerTheme').value; prefs.fontSize = Number($('#readerFontSize').value);
+    prefs.lineHeight = Number($('#readerLineHeight').value); prefs.width = Number($('#readerWidth').value);
+    localStorage.setItem(READER_KEY, JSON.stringify(prefs)); applyReaderPreferences();
+  });
+}
+$('#resetReaderSettings').addEventListener('click', () => { localStorage.removeItem(READER_KEY); applyReaderPreferences(); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#readerOverlay').hidden) $('#closeReader').click(); });
 function closeCookieSettings() { $('#cookieOverlay').hidden = true; }
 $('#cookieSettings').addEventListener('click', () => {

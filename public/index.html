@@ -43,7 +43,14 @@
   </div>
   <div id="readerOverlay" class="overlay" hidden>
     <div class="reader" role="dialog" aria-modal="true" aria-label="阅读章节">
-      <div class="reader-toolbar"><button id="closeReader" class="text-button" type="button">← 返回目录</button><span id="readerPosition"></span><div><button id="prevChapter" type="button">上一章</button><button id="nextChapter" type="button">下一章</button></div></div>
+      <div class="reader-toolbar"><button id="closeReader" class="text-button" type="button">← 返回目录</button><span id="readerPosition"></span><div><button id="readerSettingsButton" type="button" aria-expanded="false">阅读设置</button><button id="prevChapter" type="button">上一章</button><button id="nextChapter" type="button">下一章</button></div></div>
+      <div id="readerSettings" class="reader-settings" hidden>
+        <label>主题 <select id="readerTheme"><option value="paper">纸张</option><option value="warm">暖色</option><option value="dark">夜间</option></select></label>
+        <label>字号 <input id="readerFontSize" type="range" min="14" max="26" step="1"><output id="readerFontSizeValue"></output></label>
+        <label>行距 <input id="readerLineHeight" type="range" min="1.5" max="2.6" step="0.1"><output id="readerLineHeightValue"></output></label>
+        <label>宽度 <input id="readerWidth" type="range" min="520" max="900" step="20"><output id="readerWidthValue"></output></label>
+        <button id="resetReaderSettings" class="secondary" type="button">恢复默认</button>
+      </div>
       <div id="readerBody" class="reader-body"></div>
     </div>
   </div>
