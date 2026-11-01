@@ -2,11 +2,64 @@
   "name": "xihongshi-downloader",
   "version": "1.0.0",
   "private": true,
+  "main": "desktop/main.js",
   "description": "番茄小说分类浏览、搜索、阅读与 TXT 下载",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test"
+    "start": "electron .",
+    "start:web": "node server.js",
+    "test": "node --test test/*.test.js",
+    "test:desktop": "node scripts/smoke-desktop.js",
+    "pack:win": "electron-builder --win --x64 --dir",
+    "build:win": "electron-builder --win --x64"
   },
-  "engines": { "node": ">=20" },
-  "dependencies": { "cheerio": "^1.1.2" }
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2"
+  },
+  "build": {
+    "appId": "com.xihongshi.downloader",
+    "productName": "番茄小说下载器",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "server.js",
+      "decoder.js",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "executableName": "XihongshiDownloader",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "XihongshiDownloader-${version}-Setup-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "番茄小说下载器",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "runAfterFinish": false
+    },
+    "portable": {
+      "artifactName": "XihongshiDownloader-${version}-Portable-${arch}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  }
 }

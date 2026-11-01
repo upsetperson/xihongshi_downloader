@@ -6,6 +6,7 @@ downloads/
 *.txt
 !.gitignore
 coverage/
+dist/
 .DS_Store
 Thumbs.db
 npm-debug.log*

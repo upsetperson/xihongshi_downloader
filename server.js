@@ -132,7 +132,7 @@ function sendJson(res, status, value) {
 async function handler(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: '只支持 GET 请求' });
   try {
-    const url = new URL(req.url, `http://${HOST}:${PORT}`);
+    const url = new URL(req.url, 'http://localhost');
     const segments = url.pathname.split('/').filter(Boolean);
     const cookie = req.headers['x-fanqie-cookie'] || '';
     if (typeof cookie !== 'string' || cookie.length > 8192 || /[\r\n\x00-\x1f]/.test(cookie)) throw new Error('无效的 Cookie');
