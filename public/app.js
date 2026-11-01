@@ -1,6 +1,16 @@
 const $ = selector => document.querySelector(selector);
 const state = { category: '-1', categoryName: '全部书籍', query: '', page: 1, books: [], detail: null, chapterIndex: 0, listToken: 0, downloading: false };
 const elements = { grid: $('#bookGrid'), message: $('#listMessage'), detail: $('#detailContent'), reader: $('#readerBody') };
+const COOKIE_KEY = 'fanqie.cookies.v1';
+let cookieCursor = 0;
+function configuredCookies() {
+  try { const value = JSON.parse(localStorage.getItem(COOKIE_KEY) || '[]'); return Array.isArray(value) ? value.filter(item => typeof item === 'string' && item.trim()) : []; }
+  catch { return []; }
+}
+function nextCookie() {
+  const cookies = configuredCookies();
+  return cookies.length ? cookies[cookieCursor++ % cookies.length] : '';
+}
 
 function el(tag, className = '', text = '') {
   const node = document.createElement(tag);
@@ -12,8 +22,9 @@ function toast(message) {
   const node = $('#toast'); node.textContent = message; node.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => node.hidden = true, 4500);
 }
-async function api(path) {
-  const response = await fetch(path);
+async function api(path, authenticated = false) {
+  const cookie = authenticated ? nextCookie() : '';
+  const response = await fetch(path, { headers: cookie ? { 'X-Fanqie-Cookie': cookie } : {} });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || '请求失败');
   return data;
@@ -32,12 +43,17 @@ async function loadCategories() {
     const groups = await api('/api/categories');
     const box = $('#categories'); box.replaceChildren();
     for (const group of groups) {
-      box.append(el('div', 'group-title', group.name));
+      const section = el('div', 'category-group');
+      const heading = el('button', 'group-title', `${group.name} ▾`);
+      heading.type = 'button'; heading.setAttribute('aria-expanded', 'false');
+      const items = el('div', 'group-items'); items.hidden = true;
+      heading.addEventListener('click', () => { items.hidden = !items.hidden; heading.setAttribute('aria-expanded', String(!items.hidden)); heading.textContent = `${group.name} ${items.hidden ? '▾' : '▴'}`; });
+      section.append(heading, items); box.append(section);
       for (const item of group.items) {
         const button = el('button', 'side-item', item.name);
         button.type = 'button'; button.dataset.category = item.id;
         button.addEventListener('click', () => chooseCategory(item.id, item.name));
-        box.append(button);
+        items.append(button);
       }
     }
   } catch (error) { toast(`分类加载失败：${error.message}`); }
@@ -78,7 +94,7 @@ async function loadBooks() {
 async function openBook(id) {
   $('#detailView').hidden = false; $('#listingView').hidden = true;
   elements.detail.replaceChildren(el('div', 'message', '正在加载作品详情…'));
-  try { state.detail = await api(`/api/books/${id}`); renderDetail(); }
+  try { state.detail = await api(`/api/books/${id}`, true); renderDetail(); }
   catch (error) { elements.detail.replaceChildren(el('div', 'message', `加载失败：${error.message}`)); }
 }
 function renderDetail() {
@@ -109,7 +125,8 @@ function renderDetail() {
       if (controller.signal.aborted) break;
       status.textContent = `正在下载第 ${index + 1}/${last} 章：${book.chapters[index].title}`;
       try {
-        const response = await fetch(`/api/chapters/${book.chapters[index].id}`, { signal: controller.signal });
+        const cookie = nextCookie();
+        const response = await fetch(`/api/chapters/${book.chapters[index].id}`, { signal: controller.signal, headers: cookie ? { 'X-Fanqie-Cookie': cookie } : {} });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || '下载失败');
         parts.push(`${book.chapters[index].title}\n\n${result.content}\n\n`);
@@ -143,7 +160,7 @@ async function openChapter(index) {
   $('#prevChapter').disabled = index === 0; $('#nextChapter').disabled = index === state.detail.chapters.length - 1;
   elements.reader.replaceChildren(el('div', 'message', '正在加载章节…'));
   try {
-    const chapter = await api(`/api/chapters/${state.detail.chapters[index].id}`);
+    const chapter = await api(`/api/chapters/${state.detail.chapters[index].id}`, true);
     if (index !== state.chapterIndex) return;
     elements.reader.replaceChildren(el('h1', '', chapter.title || state.detail.chapters[index].title), el('div', '', chapter.content));
     elements.reader.scrollTop = 0;
@@ -162,4 +179,19 @@ $('#closeReader').addEventListener('click', () => { $('#readerOverlay').hidden =
 $('#prevChapter').addEventListener('click', () => openChapter(state.chapterIndex - 1));
 $('#nextChapter').addEventListener('click', () => openChapter(state.chapterIndex + 1));
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#readerOverlay').hidden) $('#closeReader').click(); });
+function closeCookieSettings() { $('#cookieOverlay').hidden = true; }
+$('#cookieSettings').addEventListener('click', () => {
+  $('#cookieInput').value = configuredCookies().join('\n');
+  $('#cookieCount').textContent = `已保存 ${configuredCookies().length} 个 Cookie`;
+  $('#cookieOverlay').hidden = false;
+});
+$('#closeCookieSettings').addEventListener('click', closeCookieSettings);
+$('#saveCookies').addEventListener('click', () => {
+  const cookies = $('#cookieInput').value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  if (cookies.some(item => item.length > 8192 || !item.includes('='))) return toast('每行需填写完整 Cookie，且长度不超过 8192 字符');
+  localStorage.setItem(COOKIE_KEY, JSON.stringify(cookies)); cookieCursor = 0;
+  closeCookieSettings(); toast(`已保存 ${cookies.length} 个 Cookie`);
+});
+$('#clearCookies').addEventListener('click', () => { localStorage.removeItem(COOKIE_KEY); cookieCursor = 0; $('#cookieInput').value = ''; $('#cookieCount').textContent = '已保存 0 个 Cookie'; toast('Cookie 已清空'); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#cookieOverlay').hidden) closeCookieSettings(); });
 loadCategories(); loadBooks();

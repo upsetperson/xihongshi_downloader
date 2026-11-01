@@ -12,9 +12,9 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const decoder = new NovelDecoder();
 const publicDir = path.join(__dirname, 'public');
 
-async function request(url, json = false) {
+async function request(url, json = false, cookie = '') {
   const response = await fetch(url, {
-    headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9', Referer: ORIGIN + '/' },
+    headers: { 'User-Agent': UA, 'Accept-Language': 'zh-CN,zh;q=0.9', Referer: ORIGIN + '/', ...(cookie ? { Cookie: cookie } : {}) },
     signal: AbortSignal.timeout(15000)
   });
   if (!response.ok) throw new Error(`上游请求失败：HTTP ${response.status}`);
@@ -73,9 +73,9 @@ async function search(query, page) {
   }).filter(item => /^\d{10,25}$/.test(item.id)) };
 }
 
-async function detail(id) {
+async function detail(id, cookie = '') {
   assertId(id);
-  const html = await request(`${ORIGIN}/page/${id}`);
+  const html = await request(`${ORIGIN}/page/${id}`, false, cookie);
   const $ = cheerio.load(html);
   const chapters = [];
   $('.chapter-item').each((_, element) => {
@@ -94,9 +94,9 @@ async function detail(id) {
   };
 }
 
-async function chapter(id) {
+async function chapter(id, cookie = '') {
   assertId(id);
-  const html = await request(`${ORIGIN}/reader/${id}`);
+  const html = await request(`${ORIGIN}/reader/${id}`, false, cookie);
   const $ = cheerio.load(html);
   let raw = '';
   let title = textOf($, 'h1.muye-reader-title');
@@ -128,11 +128,13 @@ async function handler(req, res) {
   try {
     const url = new URL(req.url, `http://${HOST}:${PORT}`);
     const segments = url.pathname.split('/').filter(Boolean);
+    const cookie = req.headers['x-fanqie-cookie'] || '';
+    if (typeof cookie !== 'string' || cookie.length > 8192 || /[\r\n\x00-\x1f]/.test(cookie)) throw new Error('无效的 Cookie');
     if (url.pathname === '/api/categories') return sendJson(res, 200, await categories());
     if (url.pathname === '/api/books') return sendJson(res, 200, await books(url.searchParams.get('category') || '-1', assertPage(url.searchParams.get('page'))));
     if (url.pathname === '/api/search') return sendJson(res, 200, await search((url.searchParams.get('q') || '').trim(), assertPage(url.searchParams.get('page'))));
-    if (segments[0] === 'api' && segments[1] === 'books' && segments.length === 3) return sendJson(res, 200, await detail(segments[2]));
-    if (segments[0] === 'api' && segments[1] === 'chapters' && segments.length === 3) return sendJson(res, 200, await chapter(segments[2]));
+    if (segments[0] === 'api' && segments[1] === 'books' && segments.length === 3) return sendJson(res, 200, await detail(segments[2], cookie));
+    if (segments[0] === 'api' && segments[1] === 'chapters' && segments.length === 3) return sendJson(res, 200, await chapter(segments[2], cookie));
     const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     if (!['index.html', 'app.js', 'style.css'].includes(file)) return sendJson(res, 404, { error: '页面不存在' });
     const types = { 'index.html': 'text/html', 'app.js': 'text/javascript', 'style.css': 'text/css' };

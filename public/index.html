@@ -10,6 +10,7 @@
   <header class="topbar">
     <div class="brand"><span class="brand-icon">番</span><span>番茄小说下载器<small>发现 · 阅读 · 收藏</small></span></div>
     <form id="searchForm" class="search"><input id="searchInput" type="search" placeholder="搜索书名或作者" aria-label="搜索书名或作者" maxlength="80"><button type="submit">搜索</button></form>
+    <button id="cookieSettings" class="settings-button" type="button">Cookie 设置</button>
   </header>
   <div class="shell">
     <aside class="sidebar">
@@ -36,6 +37,15 @@
     <div class="reader" role="dialog" aria-modal="true" aria-label="阅读章节">
       <div class="reader-toolbar"><button id="closeReader" class="text-button" type="button">← 返回目录</button><span id="readerPosition"></span><div><button id="prevChapter" type="button">上一章</button><button id="nextChapter" type="button">下一章</button></div></div>
       <div id="readerBody" class="reader-body"></div>
+    </div>
+  </div>
+  <div id="cookieOverlay" class="overlay" hidden>
+    <div class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="cookieTitle">
+      <div class="settings-heading"><h2 id="cookieTitle">Cookie 设置</h2><button id="closeCookieSettings" type="button" aria-label="关闭">×</button></div>
+      <p>每行填写一个番茄小说账号的完整 Cookie。阅读和下载章节时依次轮换，保存后仅存于当前浏览器。</p>
+      <textarea id="cookieInput" rows="8" spellcheck="false" placeholder="sessionid=...; 其他字段=...&#10;sessionid=...; 其他字段=..."></textarea>
+      <div id="cookieCount" class="cookie-count"></div>
+      <div class="settings-actions"><button id="clearCookies" class="secondary" type="button">清空</button><button id="saveCookies" class="primary" type="button">保存</button></div>
     </div>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>
