@@ -40,22 +40,28 @@ async function categories() {
   for (const item of result.data) {
     const group = item.label || '其他';
     if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push({ id: String(item.category_id), name: item.name });
+    groups.get(group).push({ id: String(item.category_id), name: item.name, icon: item.cover_uri || '' });
   }
   return [...groups].map(([name, items]) => ({ name, items }));
 }
 
-async function books(categoryId, page) {
+function allowed(value, options, name) {
+  if (!options.includes(String(value))) throw new Error(`无效的${name}`);
+  return String(value);
+}
+
+async function books(categoryId, page, filters = {}, cookie = '') {
   if (categoryId !== '-1') assertIdCategory(categoryId);
   const url = new URL(`${ORIGIN}/api/author/library/book_list/v0/`);
-  Object.entries({ page_count: '18', page_index: String(page - 1), gender: '1', category_id: categoryId, creation_status: '-1', word_count: '-1', book_type: '-1', sort: '0' })
+  Object.entries({ page_count: '18', page_index: String(page - 1), gender: allowed(filters.gender ?? '-1', ['-1','0','1'], '读者类型'), category_id: categoryId, creation_status: allowed(filters.status ?? '-1', ['-1','0','1'], '连载状态'), word_count: allowed(filters.words ?? '-1', ['-1','0','1','2','3','4'], '字数范围'), book_type: '-1', sort: allowed(filters.sort ?? '0', ['0','1','2'], '排序方式') })
     .forEach(([key, value]) => url.searchParams.set(key, value));
-  const result = await request(url, true);
+  const result = await request(url, true, cookie);
   if (!Array.isArray(result.data?.book_list)) throw new Error('书籍列表格式已变化');
-  return result.data.book_list.map(item => ({
+  return { hasMore: Boolean(result.data.has_more), total: result.data.total_count, items: result.data.book_list.map(item => ({
     id: String(item.book_id), title: decoded(item.book_name), author: decoded(item.author),
-    summary: decoded(item.abstract), cover: item.thumb_uri ? `https://p6-novel.byteimg.com/large/${item.thumb_uri}` : ''
-  }));
+    summary: decoded(item.abstract), cover: item.thumb_url || (item.thumb_uri ? `https://p6-novel.byteimg.com/large/${item.thumb_uri}` : ''),
+    status: Number(item.creation_status) === 0 ? '已完结' : '连载中', words: decoded(item.word_count), updated: item.last_chapter_time || ''
+  })) };
 }
 
 function assertIdCategory(id) { if (!/^\d{1,10}$/.test(id || '')) throw new Error('无效的分类 ID'); }
@@ -131,7 +137,7 @@ async function handler(req, res) {
     const cookie = req.headers['x-fanqie-cookie'] || '';
     if (typeof cookie !== 'string' || cookie.length > 8192 || /[\r\n\x00-\x1f]/.test(cookie)) throw new Error('无效的 Cookie');
     if (url.pathname === '/api/categories') return sendJson(res, 200, await categories());
-    if (url.pathname === '/api/books') return sendJson(res, 200, await books(url.searchParams.get('category') || '-1', assertPage(url.searchParams.get('page'))));
+    if (url.pathname === '/api/books') return sendJson(res, 200, await books(url.searchParams.get('category') || '-1', assertPage(url.searchParams.get('page')), { gender: url.searchParams.get('gender') ?? '-1', status: url.searchParams.get('status') ?? '-1', words: url.searchParams.get('words') ?? '-1', sort: url.searchParams.get('sort') ?? '0' }, cookie));
     if (url.pathname === '/api/search') return sendJson(res, 200, await search((url.searchParams.get('q') || '').trim(), assertPage(url.searchParams.get('page'))));
     if (segments[0] === 'api' && segments[1] === 'books' && segments.length === 3) return sendJson(res, 200, await detail(segments[2], cookie));
     if (segments[0] === 'api' && segments[1] === 'chapters' && segments.length === 3) return sendJson(res, 200, await chapter(segments[2], cookie));

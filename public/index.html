@@ -22,6 +22,14 @@
     <main>
       <section id="listingView">
         <div class="hero"><div><span class="eyebrow">你的私人书架入口</span><h1 id="listTitle">发现下一本好书</h1><p id="listSubtitle">浏览分类、搜索故事，随时开始阅读。</p></div><div class="hero-art">✦<span>📖</span>✦</div></div>
+        <div id="libraryFilters" class="library-filters">
+          <div class="filter-row"><span class="filter-label">读者：</span><div id="genderOptions" class="filter-options"></div></div>
+          <div class="filter-row"><span class="filter-label">分类：</span><div id="groupOptions" class="filter-options"></div></div>
+          <div id="categoryOptions" class="category-options"></div>
+          <div class="filter-row"><span class="filter-label">状态：</span><div id="statusOptions" class="filter-options"></div></div>
+          <div class="filter-row"><span class="filter-label">字数：</span><div id="wordOptions" class="filter-options"></div></div>
+        </div>
+        <div id="sortOptions" class="sort-options"></div>
         <div class="section-title"><h2 id="sectionHeading">精选书籍</h2><span id="listCount"></span></div>
         <div id="bookGrid" class="book-grid"></div>
         <div id="listMessage" class="message" hidden></div>

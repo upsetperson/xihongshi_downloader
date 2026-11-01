@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { category: '-1', categoryName: '全部书籍', query: '', page: 1, books: [], detail: null, chapterIndex: 0, listToken: 0, downloading: false };
+const state = { category: '1317', categoryName: '古言权谋', group: '主题', groups: [], gender: '0', status: '0', words: '1', sort: '0', query: '', page: 1, books: [], detail: null, chapterIndex: 0, listToken: 0, downloading: false };
 const elements = { grid: $('#bookGrid'), message: $('#listMessage'), detail: $('#detailContent'), reader: $('#readerBody') };
 const COOKIE_KEY = 'fanqie.cookies.v1';
 let cookieCursor = 0;
@@ -41,12 +41,13 @@ function updateNav() {
 async function loadCategories() {
   try {
     const groups = await api('/api/categories');
+    state.groups = groups;
     const box = $('#categories'); box.replaceChildren();
     for (const group of groups) {
       const section = el('div', 'category-group');
-      const heading = el('button', 'group-title', `${group.name} ▾`);
-      heading.type = 'button'; heading.setAttribute('aria-expanded', 'false');
-      const items = el('div', 'group-items'); items.hidden = true;
+      const heading = el('button', 'group-title', `${group.name} ${group.name === state.group ? '▴' : '▾'}`);
+      heading.type = 'button'; heading.setAttribute('aria-expanded', String(group.name === state.group));
+      const items = el('div', 'group-items'); items.hidden = group.name !== state.group;
       heading.addEventListener('click', () => { items.hidden = !items.hidden; heading.setAttribute('aria-expanded', String(!items.hidden)); heading.textContent = `${group.name} ${items.hidden ? '▾' : '▴'}`; });
       section.append(heading, items); box.append(section);
       for (const item of group.items) {
@@ -56,11 +57,33 @@ async function loadCategories() {
         items.append(button);
       }
     }
+    renderFilters(); updateNav();
   } catch (error) { toast(`分类加载失败：${error.message}`); }
 }
 function chooseCategory(id, name) {
   state.category = id; state.categoryName = name; state.query = ''; state.page = 1;
-  $('#searchInput').value = ''; updateNav(); showListing(); loadBooks();
+  const group = state.groups.find(group => group.items.some(item => item.id === id));
+  if (group) state.group = group.name;
+  $('#searchInput').value = ''; updateNav(); renderFilters(); showListing(); loadBooks();
+}
+function filterButtons(selector, options, selected, onSelect) {
+  const container = $(selector); container.replaceChildren();
+  for (const option of options) {
+    const button = el('button', option.value === selected ? 'filter-chip selected' : 'filter-chip', option.label);
+    button.type = 'button'; button.setAttribute('aria-pressed', String(option.value === selected));
+    if (option.icon && /^https?:\/\//.test(option.icon)) { const icon = cover(option.icon, 'category-icon'); button.prepend(icon); }
+    button.addEventListener('click', () => onSelect(option.value, option.label)); container.append(button);
+  }
+}
+function setFilter(key, value) { state[key] = value; state.page = 1; renderFilters(); loadBooks(); }
+function renderFilters() {
+  filterButtons('#genderOptions', [{value:'-1',label:'全部'},{value:'1',label:'男生'},{value:'0',label:'女生'}], state.gender, value => setFilter('gender', value));
+  filterButtons('#groupOptions', [{value:'',label:'全部'}, ...state.groups.map(group => ({value:group.name,label:group.name}))], state.group, value => { state.group = value; state.category = '-1'; state.categoryName = '全部书籍'; state.page = 1; updateNav(); renderFilters(); loadBooks(); });
+  const groups = state.group ? state.groups.filter(group => group.name === state.group) : state.groups;
+  filterButtons('#categoryOptions', groups.flatMap(group => group.items.map(item => ({value:item.id,label:item.name,icon:item.icon}))), state.category, (value, label) => chooseCategory(value, label));
+  filterButtons('#statusOptions', [{value:'-1',label:'全部'},{value:'0',label:'已完结'},{value:'1',label:'连载中'}], state.status, value => setFilter('status', value));
+  filterButtons('#wordOptions', [{value:'-1',label:'全部'},{value:'0',label:'30万以下'},{value:'1',label:'30-50万'},{value:'2',label:'50-100万'},{value:'3',label:'100-200万'},{value:'4',label:'200万以上'}], state.words, value => setFilter('words', value));
+  filterButtons('#sortOptions', [{value:'0',label:'最热'},{value:'1',label:'最新'},{value:'2',label:'字数'}], state.sort, value => setFilter('sort', value));
 }
 function showListing() { $('#detailView').hidden = true; $('#listingView').hidden = false; }
 function setMessage(message) { elements.message.textContent = message; elements.message.hidden = !message; }
@@ -72,21 +95,25 @@ async function loadBooks() {
   $('#listSubtitle').textContent = state.query ? '找到感兴趣的作品，点开即可查看目录。' : '浏览分类、搜索故事，随时开始阅读。';
   $('#pageLabel').textContent = `第 ${state.page} 页`;
   $('#prevPage').disabled = state.page === 1;
+  $('#libraryFilters').hidden = Boolean(state.query); $('#sortOptions').hidden = Boolean(state.query);
   try {
     const result = state.query
       ? await api(`/api/search?q=${encodeURIComponent(state.query)}&page=${state.page}`)
-      : await api(`/api/books?category=${encodeURIComponent(state.category)}&page=${state.page}`);
+      : await api(`/api/books?category=${encodeURIComponent(state.category)}&page=${state.page}&gender=${state.gender}&status=${state.status}&words=${state.words}&sort=${state.sort}`, true);
     if (token !== state.listToken) return;
-    const items = state.query ? result.items : result;
+    const items = result.items;
     state.books = items; elements.grid.replaceChildren();
-    $('#listCount').textContent = `本页 ${items.length} 本`;
-    $('#nextPage').disabled = state.query ? !result.hasMore : items.length < 18;
+    $('#listCount').textContent = state.query ? `本页 ${items.length} 本` : `共 ${result.total ?? '—'} 本`;
+    $('#nextPage').disabled = !result.hasMore;
     setMessage(items.length ? '' : '这一页没有书籍，试试其他分类或关键词。');
     for (const book of items) {
       const button = el('button', 'book-card'); button.type = 'button';
       button.append(cover(book.cover));
       const info = el('div', 'book-info');
-      info.append(el('h3', '', book.title || '未知书名'), el('div', 'author', book.author || '未知作者'), el('p', 'summary', book.summary || '点击查看作品详情'));
+      info.append(el('h3', '', book.title || '未知书名'), el('div', 'author', `作者：${book.author || '未知作者'}`));
+      if (book.status || book.words) info.append(el('div', 'book-meta', `${book.status || ''} · ${book.words || ''}`));
+      info.append(el('p', 'summary', book.summary || '点击查看作品详情'));
+      if (book.updated) info.append(el('div', 'book-date', book.updated));
       button.append(info); button.addEventListener('click', () => openBook(book.id)); elements.grid.append(button);
     }
   } catch (error) { if (token === state.listToken) { setMessage(`加载失败：${error.message}`); $('#nextPage').disabled = true; } }
